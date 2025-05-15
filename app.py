@@ -110,3 +110,6 @@ def get_coins_with_high_change_and_recent_high():
 
     except Exception as e:
         return f"Error: {str(e)}"
+@app.route('/')
+def index():
+    return "Flask app is running!"
