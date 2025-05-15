@@ -1,15 +1,20 @@
-
 from flask import Flask
 import requests
 import time
 import pandas as pd
 from ta.momentum import RSIIndicator
 import os
+from datetime import datetime
+
 app = Flask(__name__)
 
 def send_telegram_message(message):
     bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
+    if not bot_token or not chat_id:
+        print("Telegram credentials missing.")
+        return
+
     url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
     payload = {
         'chat_id': chat_id,
@@ -26,7 +31,7 @@ def send_telegram_message(message):
 def get_coins_with_high_change_and_recent_high():
     try:
         url_ticker = "https://api.binance.com/api/v3/ticker/24hr"
-        response = requests.get(url_ticker)
+        response = requests.get(url_ticker, timeout=10)
         response.raise_for_status()
         tickers = response.json()
 
@@ -54,9 +59,13 @@ def get_coins_with_high_change_and_recent_high():
                 'interval': '1m',
                 'limit': 20
             }
-            response_kline = requests.get(url_kline, params=params)
-            response_kline.raise_for_status()
-            klines = response_kline.json()
+            try:
+                response_kline = requests.get(url_kline, params=params, timeout=10)
+                response_kline.raise_for_status()
+                klines = response_kline.json()
+            except Exception as e:
+                print(f"Kline fetch error for {symbol}: {e}")
+                continue
 
             high_prices = [float(kline[2]) for kline in klines]
             close_prices = [float(kline[4]) for kline in klines]
@@ -72,17 +81,9 @@ def get_coins_with_high_change_and_recent_high():
                 coin['rsi'] = current_rsi
                 filtered_coins.append(coin)
 
-            time.sleep(0.2)
-
         filtered_coins.sort(key=lambda x: x['change_percent'], reverse=True)
 
         if filtered_coins:
-            print(f"\nCoins likely overbought (as of {time.ctime()}):")
-            print("-" * 80)
-            print(f"{'Symbol':<15} {'Price':<12} {'24h Change %':<15} {'24h High':<12} {'RSI':<8}")
-            print("-" * 80)
-
-            # Create a professional Telegram message
             current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             message = (
                 "📊 *Crypto Alert: Overbought Coins Detected* 📊\n"
@@ -91,7 +92,6 @@ def get_coins_with_high_change_and_recent_high():
                 "🔍 *Coin Details*:\n"
             )
             for coin in filtered_coins:
-                print(f"{coin['symbol']:<15} {coin['price']:<12.6f} {coin['change_percent']:<15.2f} {coin['high_price_24h']:<12.6f} {coin['rsi']:<8.2f}")
                 message += (
                     f"• *{coin['symbol']}*\n"
                     f"  💰 Price: ${coin['price']:.6f}\n"
@@ -103,13 +103,10 @@ def get_coins_with_high_change_and_recent_high():
                 "📝 *Note*: High RSI (>70) may suggest overbought conditions. Always conduct your own research before trading.\n"
             )
 
-            send_telegram_message(message)            
+            send_telegram_message(message)
             return "Telegram message sent."
         else:
             return "No overbought coins found."
 
     except Exception as e:
         return f"Error: {str(e)}"
-
-if __name__ == "__main__":
-    app.run()
