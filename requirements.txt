@@ -3,3 +3,4 @@ requests
 ta
 pandas
 gunicorn
+python-dotenv
